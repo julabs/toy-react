@@ -1,10 +1,24 @@
 const RENDER_TO_DOM = Symbol("render to dom");
 
+/**
+ * @typedef {{[key: string]: *}} jsonType
+ */
+
 class ElementWrapper{
+    /**
+     * 
+     * @param {string} type - 标签名称
+     */
     constructor(type){
+        /** @type HTMLElement */
         this.root = document.createElement(type);
     }
 
+    /**
+     * 
+     * @param {string} name - 属性名称
+     * @param {*} value - 属性值
+     */
     setAttribute(name, value){
         if(name.match(/^on([\s\S]+)$/)){
             this.root.addEventListener(RegExp.$1.replace(/^[\s\S]/, c => c.toLowerCase()), value);
@@ -32,6 +46,10 @@ class ElementWrapper{
         component[RENDER_TO_DOM](range);
     }
 
+    /**
+     * 
+     * @param {Range} range - 选区
+     */
     [RENDER_TO_DOM](range){
         range.deleteContents();
         range.insertNode(this.root);
@@ -39,10 +57,19 @@ class ElementWrapper{
 }
 
 class TextWrapper{
+    /**
+     * 
+     * @param {string} content - 文字内容
+     */
     constructor(content){
+        /** @type Text */
         this.root = document.createTextNode(content);
     }
     
+    /**
+     * 
+     * @param {Range} range - 选区
+     */
     [RENDER_TO_DOM](range){
         range.deleteContents();
         range.insertNode(this.root);
@@ -65,6 +92,10 @@ export class Component{
         this.children.push(component);
     }
 
+    /**
+     * 
+     * @param {Range} range - 选区
+     */
     [RENDER_TO_DOM](range){
         this._range = range;
         this.render()[RENDER_TO_DOM](range);
@@ -81,11 +112,15 @@ export class Component{
         range.setStart(oldRange.startContainer, oldRange.startOffset);
         range.setEnd(oldRange.startContainer, oldRange.startOffset);
         this[RENDER_TO_DOM](range);
-        
+
         oldRange.setStart(range.endContainer, range.endOffset);
         oldRange.deleteContents();
     }
 
+    /**
+     * 
+     * @param {jsonType} newState - 新状态
+     */
     setState(newState){
 
         if(this.state === null || typeof this.state !== 'object'){
@@ -94,7 +129,13 @@ export class Component{
             return;
         }
 
+        /**
+         * 把新状态合并到老状态中
+         * @param {jsonType} oldState - 旧状态
+         * @param {jsonType} newState - 新状态
+         */
         let merge = (oldState, newState) => {
+
             for(let p in newState){
                 if(oldState[p] === null || typeof oldState[p] !== 'object'){
                     oldState[p] = newState[p];
@@ -148,6 +189,11 @@ export function createElement(type, attributes, ...children){
     return e;
 }
 
+/**
+ * 渲染函数
+ * @param {Component} component - 要渲染的元素
+ * @param {HTMLElement} parentElement - 父元素
+ */
 export function render(component, parentElement){
     
     let range = document.createRange();
