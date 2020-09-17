@@ -1,81 +1,5 @@
 const RENDER_TO_DOM = Symbol("render to dom");
 
-/**
- * @typedef {{[key: string]: *}} jsonType
- */
-
-class ElementWrapper{
-    /**
-     * 
-     * @param {string} type - 标签名称
-     */
-    constructor(type){
-        /** @type HTMLElement */
-        this.root = document.createElement(type);
-    }
-
-    /**
-     * 
-     * @param {string} name - 属性名称
-     * @param {*} value - 属性值
-     */
-    setAttribute(name, value){
-        if(name.match(/^on([\s\S]+)$/)){
-            this.root.addEventListener(RegExp.$1.replace(/^[\s\S]/, c => c.toLowerCase()), value);
-        }else{
-
-            if(name === 'className'){
-                this.root.setAttribute('class', value);
-            }else{
-
-                this.root.setAttribute(name, value);
-            }
-
-        }
-        
-    }
-
-    appendChild(component){
-        let range = document.createRange();
-
-        range.setStart(this.root, this.root.childNodes.length);
-        range.setEnd(this.root, this.root.childNodes.length);
-        /** 删除也可以 */
-        range.deleteContents();
-
-        component[RENDER_TO_DOM](range);
-    }
-
-    /**
-     * 
-     * @param {Range} range - 选区
-     */
-    [RENDER_TO_DOM](range){
-        range.deleteContents();
-        range.insertNode(this.root);
-    }
-}
-
-class TextWrapper{
-    /**
-     * 
-     * @param {string} content - 文字内容
-     */
-    constructor(content){
-        /** @type Text */
-        this.root = document.createTextNode(content);
-    }
-    
-    /**
-     * 
-     * @param {Range} range - 选区
-     */
-    [RENDER_TO_DOM](range){
-        range.deleteContents();
-        range.insertNode(this.root);
-    }
-}
-
 export class Component{
     constructor(){
         this.props = Object.create(null);
@@ -92,30 +16,106 @@ export class Component{
         this.children.push(component);
     }
 
+    get vdom(){
+        return this.render().vdom;
+    }
+
     /**
      * 
      * @param {Range} range - 选区
      */
     [RENDER_TO_DOM](range){
         this._range = range;
-        this.render()[RENDER_TO_DOM](range);
+        this._vdom = this.vdom;
+        this._vdom[RENDER_TO_DOM](range);
+    }
+
+    update(){
+
+        let isSameNode = (oldNode, newNode) => {
+
+            if(oldNode.type !== newNode.type){
+                return false;
+            }
+
+            for(let name in newNode.props){
+                if(newNode.props[name] !== oldNode.props[name]){
+                    return false;
+                }
+            }
+
+            if(Object.keys(oldNode.props).length > Object.keys(newNode.props).length){
+                return false;
+            }
+
+            if(newNode.type === '#text'){
+                if(newNode.content !== oldNode.content){
+                    return false;
+                }
+            }
+
+            return true;
+        };
+
+        let update = (oldNode, newNode) => {
+            
+            if(!isSameNode(oldNode, newNode)){
+                newNode[RENDER_TO_DOM](oldNode._range);
+                return;
+            }
+
+            /** 只有 ElementWrapper 才可以 */
+            newNode._range = oldNode._range;
+
+            let newChildren = newNode.vchildren;
+            let oldChildren = oldNode.vchildren;
+
+            if(!newChildren || !newChildren.length){
+                return;
+            }
+
+            /** @type Range */
+            let tailRange = oldChildren[oldChildren.length - 1]._range;
+
+            for(let i = 0; i< newChildren.length; i++){
+                const oldChild = oldChildren[i];
+				const newChild = newChildren[i];
+
+                if(i < oldChildren.length){
+                    update(oldChild, newChild);
+                }else{
+                    // oldChild 的数量有可能大于 newChild 的数量
+                    let range = document.createRange();
+                    range.setStart(tailRange.endContainer, tailRange.endOffset);
+                    range.setEnd(tailRange.endContainer, tailRange.endOffset);
+                    newChild[RENDER_TO_DOM](range);
+                    tailRange = range;
+                }
+
+            }
+
+        };
+
+        let vdom = this.vdom;
+        update(this._vdom, vdom);
+        this._vdom = vdom;
     }
 
     /**
      * 重新绘制
      */
-    rerender(){
-        let oldRange = this._range;
+    // rerender(){
+    //     let oldRange = this._range;
 
-        /** 分成三段 */
-        let range = document.createRange();
-        range.setStart(oldRange.startContainer, oldRange.startOffset);
-        range.setEnd(oldRange.startContainer, oldRange.startOffset);
-        this[RENDER_TO_DOM](range);
+    //     /** 分成三段 */
+    //     let range = document.createRange();
+    //     range.setStart(oldRange.startContainer, oldRange.startOffset);
+    //     range.setEnd(oldRange.startContainer, oldRange.startOffset);
+    //     this[RENDER_TO_DOM](range);
 
-        oldRange.setStart(range.endContainer, range.endOffset);
-        oldRange.deleteContents();
-    }
+    //     oldRange.setStart(range.endContainer, range.endOffset);
+    //     oldRange.deleteContents();
+    // }
 
     /**
      * 
@@ -147,9 +147,163 @@ export class Component{
 
         merge(this.state, newState);
 
-        this.rerender();
+        this.update();
     }
 }
+
+/**
+ * @typedef {{[key: string]: *}} jsonType
+ */
+
+class ElementWrapper extends Component{
+    /**
+     * 
+     * @param {string} type - 标签名称
+     */
+    constructor(type){
+
+        super(type);
+
+        this.type = type;
+
+    }
+
+    /**
+     * 
+     * @param {string} name - 属性名称
+     * @param {*} value - 属性值
+     */
+    /*setAttribute(name, value){
+        if(name.match(/^on([\s\S]+)$/)){
+            this.root.addEventListener(RegExp.$1.replace(/^[\s\S]/, c => c.toLowerCase()), value);
+        }else{
+
+            if(name === 'className'){
+                this.root.setAttribute('class', value);
+            }else{
+
+                this.root.setAttribute(name, value);
+            }
+
+        }
+        
+    }
+
+    appendChild(component){
+        let range = document.createRange();
+
+        range.setStart(this.root, this.root.childNodes.length);
+        range.setEnd(this.root, this.root.childNodes.length);
+
+        component[RENDER_TO_DOM](range);
+    }*/
+
+    get vdom(){
+        this.vchildren = this.children.map(child => child.vdom);
+        return this;
+        /* {
+            type: this.type,
+            props: this.props,
+            children: this.children.map(child => child.vdom)
+        }; */
+    }
+
+    /**
+     * 
+     * @param {Range} range - 选区
+     */
+    [RENDER_TO_DOM](range){
+
+        this._range = range;
+
+        let root = document.createElement(this.type);
+
+        for(let name in this.props){
+
+            let value = this.props[name];
+
+            if(name.match(/^on([\s\S]+)$/)){
+                root.addEventListener(RegExp.$1.replace(/^[\s\S]/, c => c.toLowerCase()), value);
+            }else{
+    
+                if(name === 'className'){
+                    root.setAttribute('class', value);
+                }else{
+    
+                    root.setAttribute(name, value);
+                }
+    
+            }
+        }
+
+        if(!this.vchildren){
+            this.vchildren = this.children.map(child => child.vdom);
+        }
+
+        for(let child of this.vchildren){
+            let childRange = document.createRange();
+
+            childRange.setStart(root, root.childNodes.length);
+            childRange.setEnd(root, root.childNodes.length);
+
+            child[RENDER_TO_DOM](childRange);
+        }
+
+
+        repleaceContent(range, root);
+    }
+}
+
+class TextWrapper extends Component{
+    /**
+     * 
+     * @param {string} content - 文字内容
+     */
+    constructor(content){
+
+        super(content);
+
+        this.type = '#text';
+
+        this.content = content;
+    }
+
+    get vdom(){
+        return this;
+        /* {
+            type: '#text',
+            content: this.content,
+        }; */
+    }
+    
+    /**
+     * 
+     * @param {Range} range - 选区
+     */
+    [RENDER_TO_DOM](range){
+        this._range = range;
+        console.log(range);
+        
+        let root = document.createTextNode(this.content);
+        repleaceContent(range, root);
+    }
+}
+
+/**
+ * 
+ * @param {Range} range 
+ * @param {Node} node 
+ */
+function repleaceContent(range, node){
+    range.insertNode(node);
+    range.setStartAfter(node);
+    range.deleteContents();
+
+    range.setStartBefore(node);
+    range.setEndAfter(node);
+}
+
+
 
 export function createElement(type, attributes, ...children){
 
